@@ -65,7 +65,7 @@ This project is intended for educational and demonstration purposes.
 License
 Copyright 2025
 [Aeshan Tripathi]
-This project is released under the Apache License.
+This project is released under the Apache 2.0 License.
 
 Feel free to modify this as needed for your own use or for public sharing!
 
