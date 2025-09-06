@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-blue-900 text-white">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flight Radar Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    /* Search bar animated underline */
+    .search-underline input:focus {
+      border-color: #38bdf8;
+      outline: none;
+    }
+    .search-underline input::placeholder {
+      color: #cbd5e1;
+      opacity: 1;
+    }
+    .dropdown-panel {
+      animation: fadeInScale 0.25s ease;
+    }
+    @keyframes fadeInScale {
+      from { opacity:0; transform:scale(0.96) translateY(-10px);} 
+      to { opacity:1; transform:scale(1) translateY(0);} 
+    }
+    /* Icon styling */
+    .icon-btn { 
+      transition: all 0.2s ease; 
+    }
+    .icon-btn:hover { 
+      background: rgba(59,130,246,0.2);
+      transform: scale(1.05);
+    }
+    
+    /* Toggle switch styling */
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #1e3a8a;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    .toggle-switch.active {
+      background: #06b6d4;
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .toggle-switch.active::after {
+      transform: translateX(20px);
+    }
+    
+    /* Filter button active state */
+    .filter-btn {
+      transition: all 0.2s ease;
+    }
+    .filter-btn.active {
+      background: #06b6d4 !important;
+      color: white;
+      transform: scale(1.05);
+    }
+    /* Weather button active state */
+    .weather-btn {
+      transition: all 0.2s ease;
+    }
+    .weather-btn.active {
+      background: #22d3ee !important;
+      color: #0b1324;
+      transform: scale(1.05);
+      box-shadow: 0 0 0 2px rgba(34,211,238,0.35), 0 6px 14px rgba(34,211,238,0.25);
+    }
+    
+    /* Flight marker animation */
+    .flight-marker, .leaflet-marker-icon.flight-marker {
+      transition: all 0.3s ease;
+      cursor: pointer;
+      font-size: 1.6rem;
+      user-select: none;
+      line-height: 1;
+      width: 1.8rem;
+      height: 1.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9999px;
+      border: 2px solid white;
+      box-shadow: 0 0 6px rgba(255 255 255 / 0.5);
+      background: rgba(0 0 0 / 0.2);
+      transform-origin: center;
+    }
+    .flight-marker:hover, .leaflet-marker-icon.flight-marker:hover {
+      transform: scale(1.4);
+      z-index: 10;
+      box-shadow: 0 0 12px #06b6d4;
+      background: rgba(6 182 212 / 0.8);
+    }
+
+    /* Loading animation */
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 2s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Path lines with smooth edges */
+    #flightPaths svg polyline {
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    
+    .api-status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .api-status.success {
+      background: #065f46;
+      color: #10b981;
+    }
+    .api-status.error {
+      background: #7f1d1d;
+      color: #ef4444;
+    }
+    .api-status.loading {
+      background: #1e3a8a;
+      color: #60a5fa;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col bg-gradient-to-br from-blue-900 via-blue-800 to-blue-500">
+  
+  <!-- API Status Indicator -->
+  <div id="apiStatus" class="api-status hidden">Loading...</div>
+  
+  <!-- Splash Screen -->
+  <div id="splash" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-600">
+    <div class="bg-blue-950/80 backdrop-blur-md border border-blue-600 rounded-2xl shadow-2xl p-8 w-[min(92vw,520px)] text-center">
+      <h1 class="text-2xl font-extrabold tracking-wide text-cyan-300 mb-2">Flight Radar Mockup</h1>
+      <p class="text-blue-200/90 mb-6">Choose how you want to start:</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button id="splashViewMap" class="px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-cyan-300" aria-label="View the interactive map">
+          View Map
+        </button>
+        <button id="splashFindFlight" class="px-4 py-3 rounded-xl bg-blue-700 hover:bg-blue-600 text-white font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Find a specific flight">
+          Find a Flight
+        </button>
+      </div>
+      <form id="splashSearchForm" class="mt-6 flex items-stretch gap-2" role="search" aria-label="Splash flight search">
+        <input id="splashSearchInput" type="search" class="flex-1 px-4 py-3 rounded-xl bg-blue-900/70 border border-blue-700 text-blue-100 placeholder:text-blue-300/70 focus:outline-none focus:border-cyan-400" placeholder="Search callsign, airline, city..." autocomplete="off" />
+        <button class="px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-lg transition" aria-label="Search">
+          Search
+        </button>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Top search bar/header -->
+  <header class="flex items-start px-6 py-4 bg-transparent gap-4 relative">
+    <!-- Search Box -->
+    <form id="searchForm" class="search-underline flex flex-col gap-2 flex-1 max-w-md" autocomplete="off" role="search" aria-label="Flight search form">
+      <div class="relative flex items-center">
+        <input
+          type="search"
+          id="searchInput"
+          class="px-4 py-3 w-full rounded-lg bg-blue-950/80 backdrop-blur-sm border-b-2 border-transparent text-white focus:outline-none focus:border-cyan-400 focus:bg-blue-950 transition-all"
+          placeholder="JFK - New York"
+          aria-label="Search flights or queries"
+          autocomplete="off"
+        />
+        <div id="loadingSpinner" class="loading-spinner absolute right-3 hidden"></div>
+      </div>
+      <span class="text-xs text-blue-200 pl-2 opacity-80" aria-live="polite">
+        Try queries like "Lagos to London", "Delta Airlines Europe"
+      </span>
+    </form>
+    
+    <!-- API Mode Toggle -->
+    <div class="flex items-center gap-3">
+      <label class="flex items-center gap-2 text-sm text-blue-200">
+        <input type="checkbox" id="useApiData" class="rounded" />
+        Use Live API Data
+      </label>
+    </div>
+    
+    <!-- Filter Dropdown Trigger -->
+    <button id="filterBtn" class="icon-btn relative rounded-full px-4 py-3 bg-blue-800/80 backdrop-blur-sm hover:bg-blue-700 shadow-lg" aria-label="Open filters" aria-haspopup="true" aria-expanded="false" aria-controls="filterDropdown">
+      <!-- Filter icon -->
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <path d="M3 6h18M9 12h6M12 18h0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    
+    <!-- Dropdown Panel -->
+    <div id="filterDropdown" class="dropdown-panel absolute right-6 top-20 bg-blue-950/95 backdrop-blur-sm border border-blue-600 rounded-xl shadow-2xl w-80 z-50 hidden" role="menu" aria-label="Filter options">
+      <div class="p-6">
+        <!-- Header -->
+        <div class="flex items-center gap-3 mb-4 pb-3 border-b border-blue-700">
+          <svg width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+            <path d="M3 6h18M9 12h6M12 18h0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span class="font-semibold text-lg text-blue-100">Flight Filters</span>
+        </div>
+        
+        <!-- Aircraft Types -->
+        <div class="mb-6">
+          <div class="mb-3 text-blue-200 text-sm font-semibold">Aircraft Types</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="commercial" role="menuitem" aria-pressed="true">
+              <span>✈️</span> Commercial
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="private" role="menuitem" aria-pressed="true">
+              <span>🛩️</span> Private
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="military" role="menuitem" aria-pressed="true">
+              <span>⚔️</span> Military
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="cargo" role="menuitem" aria-pressed="true">
+              <span>📦</span> Cargo
+            </button>
+          </div>
+        </div>
+        
+        <!-- Declutter Mode -->
+        <div class="flex items-center justify-between mb-4 py-2">
+          <div class="flex flex-col">
+            <span class="text-blue-200 text-sm font-medium">Declutter Mode</span>
+            <span class="text-blue-400 text-xs">Focus on commercial flights</span>
+          </div>
+          <div id="declutterToggle" class="toggle-switch" data-active="false" role="switch" tabindex="0" aria-checked="false"></div>
+        </div>
+        
+        <!-- Weather Overlay -->
+        <div class="flex items-center justify-between py-2">
+          <div class="flex flex-col">
+            <span class="text-blue-200 text-sm font-medium">Weather Overlay</span>
+            <span class="text-blue-400 text-xs">Show weather data</span>
+          </div>
+          <div id="weatherToggle" class="toggle-switch active" data-active="true" role="switch" tabindex="0" aria-checked="true"></div>
+        </div>
+
+        <!-- Weather Filters -->
+        <div class="mt-3">
+          <div class="mb-2 text-blue-200 text-sm font-semibold">Weather Filters</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="rain" aria-pressed="true">
+              🌧️ Rain
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="storm" aria-pressed="true">
+              ⛈️ Storm
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="snow" aria-pressed="true">
+              ❄️ Snow
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="fog" aria-pressed="true">
+              🌫️ Fog
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="relative flex-1 px-6 pb-6 flex items-center justify-center select-none">
+    <div id="mapContainer" class="relative w-full h-full max-h-[650px] rounded-2xl bg-gradient-to-tl from-blue-800 via-blue-700 to-blue-500 flex items-center justify-center overflow-hidden shadow-2xl">
+      
+      <!-- Map placeholder -->
+      <p class="absolute top-6 left-6 text-cyan-300 font-mono text-lg opacity-70 select-none">Interactive Map</p>
+      
+      <div id="leafletMap" class="absolute inset-0 z-0"></div>
+
+      <!-- Map placeholder -->
+      <div id="flightPaths" class="absolute inset-0 pointer-events-none z-10"></div>
+      
+      <!-- Weather overlay -->
+      <div id="weatherOverlay" class="absolute inset-0 bg-gradient-to-br from-blue-400/20 via-transparent to-cyan-400/20 pointer-events-none transition-opacity duration-500 z-5"></div>
+      
+      <!-- Weather indicator -->
+      <div class="absolute left-8 top-[40%] w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg text-xl opacity-90 z-30 select-none">
+        ⛅
+      </div>
+      
+      <!-- Flight Info Card -->
+      <div id="flightInfoCard" class="absolute bottom-6 left-6 bg-blue-950/95 backdrop-blur-sm border border-blue-600 rounded-xl shadow-2xl p-5 w-80 text-blue-100 hidden z-40" role="region" aria-live="polite" aria-label="Flight information">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-lg">Flight Information</span>
+          <button id="closeInfoCard" class="bg-blue-800 rounded-full w-8 h-8 flex items-center justify-center hover:bg-blue-700 transition-colors" aria-label="Close flight information">
+            <svg width="12" height="12" fill="none" aria-hidden="true" focusable="false">
+              <path d="M2 2l8 8M10 2L2 10" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div id="flightDetails" class="text-sm space-y-1">
+          <!-- Filled dynamically -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // API Configuration - REPLACE WITH YOUR API KEY
+      const AVIATIONSTACK_API_KEY = '27da64d5b82101ee9ca36df5f79eab86';
+      const AVIATIONSTACK_BASE_URL = 'http://api.aviationstack.com/v1/flights';
+      
+      // Elements
+      const filterBtn = document.getElementById('filterBtn');
+      const filterDropdown = document.getElementById('filterDropdown');
+      const declutterToggle = document.getElementById('declutterToggle');
+      const weatherToggle = document.getElementById('weatherToggle');
+      const weatherOverlay = document.getElementById('weatherOverlay');
+      const flightInfoCard = document.getElementById('flightInfoCard');
+      const closeInfoCard = document.getElementById('closeInfoCard');
+      const flightPathsContainer = document.getElementById('flightPaths');
+      const filterBtns = filterDropdown.querySelectorAll('.filter-btn');
+      const weatherBtns = filterDropdown.querySelectorAll('.weather-btn');
+      const searchForm = document.getElementById('searchForm');
+      const searchInput = document.getElementById('searchInput');
+      const flightDetails = document.getElementById('flightDetails');
+      const splash = document.getElementById('splash');
+      const splashViewMap = document.getElementById('splashViewMap');
+      const splashFindFlight = document.getElementById('splashFindFlight');
+      const splashSearchForm = document.getElementById('splashSearchForm');
+      const splashSearchInput = document.getElementById('splashSearchInput');
+      const useApiData = document.getElementById('useApiData');
+      const loadingSpinner = document.getElementById('loadingSpinner');
+      const apiStatus = document.getElementById('apiStatus');
+
+      // Initialize Leaflet map
+      const leafletMapEl = document.getElementById('leafletMap');
+      if (leafletMapEl) {
+        const map = L.map(leafletMapEl, { zoomControl: true }).setView([20, 0], 3);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        window.addEventListener('resize', () => map.invalidateSize());
+        window.__map = map;
+        window.__markersLayer = L.layerGroup().addTo(map);
+        window.__pathsLayer = L.layerGroup().addTo(map);
+        window.__weatherLayer = L.layerGroup().addTo(map);
+      }
+
+      // API Flight data storage
+      let apiFlights = [];
+      let lastApiUpdate = null;
+      const API_CACHE_DURATION = 60000; // 1 minute cache
+
+      // Show API status
+      function showApiStatus(status, message, duration = 3000) {
+        apiStatus.textContent = message;
+        apiStatus.className = `api-status ${status}`;
+        apiStatus.classList.remove('hidden');
+        
+        if (duration > 0) {
+          setTimeout(() => {
+            apiStatus.classList.add('hidden');
+          }, duration);
+        }
+      }
+
+      // Expanded airport coordinates (major airports worldwide)
+      const airportCoords = {
+        // North America
+        JFK: [40.6413, -73.7781], LHR: [51.4700, -0.4543], LAX: [33.9416, -118.4085],
+        MIA: [25.7959, -80.2870], CDG: [49.0097, 2.5479], SFO: [37.6213, -122.3790],
+        ORD: [41.9742, -87.9073], FLL: [26.0726, -80.1527], ATL: [33.6407, -84.4277],
+        BOS: [42.3656, -71.0096], EWR: [40.6895, -74.1745], IAD: [38.9531, -77.4565],
+        PHL: [39.8744, -75.2424], CLT: [35.2144, -80.9473], MCO: [28.4312, -81.3081],
+        DEN: [39.8617, -104.6731], SEA: [47.4502, -122.3088], LAS: [36.0840, -115.1537],
+        PHX: [33.4343, -112.0116], DFW: [32.8998, -97.0403], IAH: [29.9902, -95.3368],
+        MSP: [44.8848, -93.2223], DTW: [42.2162, -83.3554], BWI: [39.1774, -76.6684],
+        YYZ: [43.6777, -79.6248], YVR: [49.1951, -123.1844],
+        
+        // Europe
+        IST: [41.2619, 28.7412], DOH: [25.2731, 51.6080], AMS: [52.3105, 4.7683],
+        FCO: [41.8003, 12.2389], MAD: [40.4937, -3.5669], BCN: [41.2971, 2.0833],
+        MUC: [48.3537, 11.7863], ZUR: [47.4647, 8.5492], LGW: [51.1537, -0.1821],
+        STN: [51.8860, 0.2389], MAN: [53.3539, -2.2750], ORY: [48.7233, 2.3794],
+        FRA: [50.0264, 8.5431], DUS: [51.2895, 6.7668], VIE: [48.1103, 16.5697],
+        CPH: [55.6181, 12.6561], ARN: [59.6519, 17.9186], OSL: [60.1939, 11.1004],
+        HEL: [60.3172, 24.9633], SVO: [55.9726, 37.4146], LED: [59.8003, 30.2625],
+        WAW: [52.1657, 20.9671], PRG: [50.1008, 14.2632], BUD: [47.4394, 19.2606],
+        
+        // Asia Pacific
+        NRT: [35.7730, 140.3929], HND: [35.5494, 139.7798], HKG: [22.3080, 113.9185],
+        SIN: [1.3644, 103.9915], DEL: [28.5562, 77.1000], BOM: [19.0896, 72.8656],
+        BKK: [13.6900, 100.7501], ICN: [37.4602, 126.4407], KUL: [2.7456, 101.7091],
+        PVG: [31.1443, 121.8083], CAN: [23.3924, 113.2988], TPE: [25.0797, 121.2342],
+        CGK: [-6.1275, 106.6537], MNL: [14.5086, 121.0194], SYD: [-33.9399, 151.1753],
+        MEL: [-37.6733, 144.8443], BNE: [-27.3942, 153.1218], PER: [-31.9385, 115.9672],
+        BLR: [13.1986, 77.7066], MAA: [12.9941, 80.1709], CCU: [22.6515, 88.4463],
+        PKX: [39.5098, 116.4074], CTU: [30.5785, 103.9469], XIY: [34.4471, 108.7515],
+        
+        // Middle East & Africa
+        DXB: [25.2532, 55.3657], CAI: [30.1219, 31.4056], NBO: [-1.3192, 36.9278],
+        JNB: [-26.1337, 28.2420], CPT: [-33.9696, 18.5972], LOS: [6.5774, 3.3211],
+        ADD: [8.9779, 38.7993], JED: [21.6796, 39.1567], AUH: [24.4330, 54.6511],
+        CMN: [33.3676, -7.5900], ALG: [36.6910, 3.2154], TUN: [36.8510, 10.2272],
+        KWI: [29.2267, 47.9689], BAH: [26.2708, 50.6336], MCT: [23.5933, 58.2844],
+        RUH: [24.9576, 46.6988], DMM: [26.4708, 49.7948],
+        
+        // South America
+        GRU: [-23.4356, -46.4731], GIG: [-22.8099, -43.2503], BOG: [4.7016, -74.1469],
+        LIM: [-12.0219, -77.1143], SCL: [-33.3930, -70.7858], EZE: [-34.8222, -58.5358],
+        UIO: [-0.1295, -78.3576], CCS: [10.6013, -66.9911]
+      };
+
+      // Mock flights data (original functionality preserved)
+      const mockFlights = [
+        { id: "DL283", callsign: "DL283", 
+        type: "commercial", model: "Boeing 767-300", origin: "JFK - New York", destination: "LHR - London", altitude: "36,000 ft", speed: "560 mph", emoji: "✈️" },
+        { id: "PR456", callsign: "PR456", 
+        type: "private", model: "Cessna Citation", origin: "LAX - Los Angeles", destination: "JFK - New York", altitude: "12,000 ft", speed: "180 mph", emoji: "🛩️" },
+        { id: "ML789", callsign: "ML789", 
+        type: "military", model: "F-16 Falcon", origin: "JFK - New York", destination: "?-???", altitude: "25,000 ft", speed: "900 mph", emoji: "⚔️", airline: "USAF" },
+        { id: "CG100", callsign: "CG100", 
+        type: "cargo", model: "Boeing 747F", origin: "MIA - Miami", destination: "CDG - Paris", altitude: "38,000 ft", speed: "520 mph", emoji: "📦", airline: "DHL Aviation" },
+        { id: "EX101", callsign: "EX101", 
+        type: "commercial", model: "Airbus A320", origin: "SFO - San Francisco", destination: "ORD - Chicago", altitude: "33,000 ft", speed: "540 mph", emoji: "✈️" },
+        { id: "PR789", callsign: "PR789", 
+        type: "private", model: "Gulfstream G650", origin: "FLL - Fort Lauderdale", destination: "ATL - Atlanta", altitude: "14,000 ft", speed: "200 mph", emoji: "🛩️" },
+        { id: "MG202", callsign: "MG202", 
+        type: "military", model: "MQ-9 Reaper", origin: "LAX - Los Angeles", destination: "SFO - San Francisco", altitude: "28,000 ft", speed: "480 mph", emoji: "⚔️", airline: "USAF" },
+        { id: "CG200", callsign: "CG200", 
+        type: "cargo", model: "Antonov An-124", origin: "LAX - Los Angeles", destination: "NRT - Tokyo", altitude: "37,000 ft", speed: "530 mph", emoji: "📦", airline: "Volga-Dnepr" }
+      ];
+
+      // Flight positioning helper functions
+      function estimateFlightProgress(flight) {
+        const status = flight.status?.toLowerCase() || '';
+        
+        switch (status) {
+          case 'scheduled':
+          case 'boarding': 
+            return 0.05; // Near departure
+          case 'departed':
+          case 'en-route':
+          case 'active':
+            return 0.3 + (Math.random() * 0.4); // 30-70% progress
+          case 'landed':
+          case 'arrived':
+            return 0.95; // Near destination
+          default:
+            return 0.2 + (Math.random() * 0.6); // Random 20-80%
+        }
+      }
+
+      function interpolatePosition(start, end, progress) {
+        const lat = start[0] + (end[0] - start[0]) * progress;
+        const lng = start[1] + (end[1] - start[1]) * progress;
+        return [lat, lng];
+      }
+
+      function getGreatCirclePosition(start, end, progress) {
+        const R = 6371; // Earth's radius in km
+        
+        const lat1 = start[0] * Math.PI / 180;
+        const lng1 = start[1] * Math.PI / 180;
+        const lat2 = end[0] * Math.PI / 180;
+        const lng2 = end[1] * Math.PI / 180;
+        
+        const d = Math.acos(Math.sin(lat1) * Math.sin(lat2) + 
+                           Math.cos(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1));
+        
+        if (d === 0) return start; // Same location
+        
+        const a = Math.sin((1 - progress) * d) / Math.sin(d);
+        const b = Math.sin(progress * d) / Math.sin(d);
+        
+        const x = a * Math.cos(lat1) * Math.cos(lng1) + b * Math.cos(lat2) * Math.cos(lng2);
+        const y = a * Math.cos(lat1) * Math.sin(lng1) + b * Math.cos(lat2) * Math.sin(lng2);
+        const z = a * Math.sin(lat1) + b * Math.sin(lat2);
+        
+        const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI;
+        const lng = Math.atan2(y, x) * 180 / Math.PI;
+        
+        return [lat, lng];
+      }
+
+      // API Integration Functions
+      async function fetchFlightsFromAPI(params = {}) {
+        try {
+          showApiStatus('loading', 'Fetching live flight data...', 0);
+          loadingSpinner.classList.remove('hidden');
+          
+          const queryParams = new URLSearchParams({
+            access_key: AVIATIONSTACK_API_KEY,
+            limit: 100,
+            ...params
+          });
+
+          console.log('Fetching from API with params:', queryParams.toString());
+          const response = await fetch(`${AVIATIONSTACK_BASE_URL}?${queryParams}`);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          console.log('Raw API response:', data);
+          console.log('Total flights in response:', data.data?.length);
+          
+          if (data.error) {
+            throw new Error(data.error.message || `API Error: ${data.error.code}`);
+          }
+
+          const validFlights = (data.data || []).filter(flight => {
+            return flight.departure && flight.arrival;
+          });
+
+          console.log(`API returned ${data.data?.length || 0} flights, ${validFlights.length} passed validation`);
+          
+          if (validFlights.length === 0) {
+            showApiStatus('error', 'No valid flight data available', 5000);
+            return [];
+          }
+
+          showApiStatus('success', `Loaded ${validFlights.length} flights`, 2000);
+          return validFlights;
+          
+        } catch (error) {
+          console.error('API fetch error:', error);
+          showApiStatus('error', `API Error: ${error.message}`, 5000);
+          return [];
+        } finally {
+          loadingSpinner.classList.add('hidden');
+        }
+      }
+
+      function transformApiFlightData(apiFlightData) {
+        console.log('Transforming API data:', apiFlightData.length, 'flights');
+        
+        return apiFlightData.map((flight, index) => {
+          const flightType = determineFlightType(flight);
+          const emoji = getEmojiForType(flightType);
+          
+          const depIata = flight.departure?.iata || flight.departure?.icao || 'UNK';
+          const arrIata = flight.arrival?.iata || flight.arrival?.icao || 'UNK';
+          const depName = flight.departure?.airport || 'Unknown Airport';
+          const arrName = flight.arrival?.airport || 'Unknown Airport';
+          
+          // Debug coordinate information
+          console.log(`Flight ${flight.flight?.iata || index}:`, {
+            departure: depIata,
+            arrival: arrIata,
+            live: flight.live,
+            departureCoords: getLatLngFor(depIata),
+            arrivalCoords: getLatLngFor(arrIata),
+            status: flight.flight_status
+          });
+          
+          const transformedFlight = {
+            id: flight.flight?.iata || flight.flight?.icao || `api_flight_${index}`,
+            callsign: flight.flight?.iata || flight.flight?.icao || `FLIGHT${index}`,
+            type: flightType,
+            model: flight.aircraft?.iata || flight.aircraft?.icao || 'Unknown Aircraft',
+            origin: `${depIata} - ${depName}`,
+            destination: `${arrIata} - ${arrName}`,
+            altitude: flight.live?.altitude ? `${Math.round(flight.live.altitude * 3.28084)} ft` : 'Unknown',
+            speed: flight.live?.speed_horizontal ? `${Math.round(flight.live.speed_horizontal * 0.621371)} mph` : 'Unknown',
+            emoji: emoji,
+            airline: flight.airline?.name || 'Unknown Airline',
+            status: flight.flight_status || 'Unknown',
+            live: flight.live,
+            departure: flight.departure,
+            arrival: flight.arrival,
+            aircraft: flight.aircraft,
+            departureCoords: getLatLngFor(depIata),
+            arrivalCoords: getLatLngFor(arrIata)
+          };
+          
+          return transformedFlight;
+        });
+      }
+
+      function determineFlightType(flight) {
+        const airline = flight.airline?.name?.toLowerCase() || '';
+        const callsign = flight.airline?.callsign?.toLowerCase() || '';
+        
+        if (airline.includes('cargo') || airline.includes('freight') || 
+            callsign.includes('cargo') || callsign.includes('freight') ||
+            airline.includes('dhl') || airline.includes('fedex') || airline.includes('ups')) {
+          return 'cargo';
+        }
+        
+        if (airline.includes('air force') || airline.includes('military') ||
+            callsign.includes('air force') || callsign.includes('military')) {
+          return 'military';
+        }
+        
+        return 'commercial';
+      }
+
+      function getEmojiForType(type) {
+        const emojis = {
+          commercial: '✈️',
+          private: '🛩️',
+          military: '⚔️',
+          cargo: '📦'
+        };
+        return emojis[type] || '✈️';
+      }
+
+      async function updateFlightData() {
+        if (useApiData.checked) {
+          if (!lastApiUpdate || (Date.now() - lastApiUpdate) > API_CACHE_DURATION) {
+            const apiData = await fetchFlightsFromAPI();
+            apiFlights = transformApiFlightData(apiData);
+            lastApiUpdate = Date.now();
+            
+            console.log('Transformed flights:', apiFlights.length);
+          }
+          return apiFlights;
+        } else {
+          return mockFlights;
+        }
+      }
+
+      // State management
+      let activeFilters = new Set(["commercial", "private", "military", "cargo"]);
+      let declutterMode = false;
+      let weatherMode = true;
+      let activeWeather = new Set(['rain','storm','snow','fog']);
+      let selectedFlightId = null;
+      let lastSearchQuery = '';
+      let searchResults = [];
+      let searchIndex = 0;
+
+      async function getVisibleFlights() {
+        const flights = await updateFlightData();
+        return flights.filter(f => {
+          if (!activeFilters.has(f.type)) return false;
+          if (declutterMode && f.type !== 'commercial') return false;
+          return true;
+        });
+      }
+
+      function matchesQuery(flight, query) {
+        const q = query.toLowerCase();
+        return (
+          flight.callsign.toLowerCase().includes(q) ||
+          (flight.airline && flight.airline.toLowerCase().includes(q)) ||
+          flight.origin.toLowerCase().includes(q) ||
+          flight.destination.toLowerCase().includes(q)
+        );
+      }
+
+      function updateSearchStatus() {
+        const status = document.querySelector('#searchForm span');
+        if (!status) return;
+        if (!lastSearchQuery || searchResults.length === 0) {
+          const dataSource = useApiData.checked ? 'Live API data' : 'Mock data';
+          status.textContent = `Try queries like "Lagos to London", "Delta Airlines Europe" (${dataSource})`;
+        } else {
+          status.textContent = `Matches for "${lastSearchQuery}": ${searchResults.length} (${searchIndex + 1}/${searchResults.length})`;
+        }
+      }
+
+      function resetSearchState() {
+        lastSearchQuery = '';
+        searchResults = [];
+        searchIndex = 0;
+        updateSearchStatus();
+      }
+
+      // Helper functions
+      function getAirportCode(nameWithCity) {
+        if (!nameWithCity) return null;
+        const code = nameWithCity.split(/[\s-]+/)[0].trim();
+        return code || null;
+      }
+
+      function getLatLngFor(code) {
+        return airportCoords[code] || null;
+      }
+
+      function createLeafletMarker(flight) {
+        let latlng;
+        
+        // CORRECTED FLIGHT POSITIONING LOGIC
+        // Priority 1: Use live coordinates if available (actual current position)
+        if (flight.live && flight.live.latitude && flight.live.longitude) {
+          latlng = [flight.live.latitude, flight.live.longitude];
+          console.log(`Using live coordinates for ${flight.callsign}:`, latlng);
+        } 
+        // Priority 2: Estimate position along route based on flight status
+        else {
+          const depCoords = flight.departureCoords;
+          const arrCoords = flight.arrivalCoords;
+          
+          if (depCoords && arrCoords) {
+            // Estimate position based on flight status
+            const progress = estimateFlightProgress(flight);
+            latlng = getGreatCirclePosition(depCoords, arrCoords, progress);
+            console.log(`Estimated position for ${flight.callsign} (${Math.round(progress * 100)}% complete):`, latlng);
+          }
+          // Priority 3: Use departure airport as fallback
+          else if (depCoords) {
+            latlng = depCoords;
+            console.log(`Using departure airport for ${flight.callsign}:`, latlng);
+          }
+          // Priority 4: Random position near major hub
+          else {
+            const hubs = [
+              [51.4700, -0.4543],   // London Heathrow
+              [40.6413, -73.7781],  // JFK New York
+              [25.2532, 55.3657],   // Dubai
+              [22.3080, 113.9185],  // Hong Kong
+              [1.3644, 103.9915],   // Singapore
+              [35.7730, 140.3929]   // Tokyo Narita
+            ];
+            const hub = hubs[Math.floor(Math.random() * hubs.length)];
+            latlng = [
+              hub[0] + (Math.random() - 0.5) * 3, 
+              hub[1] + (Math.random() - 0.5) * 3
+            ];
+            console.log(`Using estimated hub position for ${flight.callsign}:`, latlng);
+          }
+        }
+        
+        if (!latlng) {
+          console.warn(`No coordinates found for flight ${flight.callsign}`);
+          return null;
+        }
+        
+        const divIcon = L.divIcon({
+          className: 'flight-marker',
+          html: `<span>${flight.emoji}</span>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        
+        const m = L.marker(latlng, { 
+          icon: divIcon, 
+          title: `${flight.callsign} (${flight.type})` 
+        });
+        
+        m.on('click', () => selectFlight(flight.id));
+        m.on('keypress', (e) => { 
+          if (e.originalEvent && (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ')) 
+            selectFlight(flight.id); 
+        });
+        m.__flightId = flight.id;
+        return m;
+      }
+
+      function styleMarkerByDeclutter(marker, flight) {
+        const el = marker.getElement();
+        if (!el) return;
+        if (declutterMode && flight.type !== 'commercial') {
+          el.style.opacity = '0.3';
+          el.style.transform = 'scale(0.8)';
+        } else {
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1)';
+        }
+      }
+
+      // Weather systems
+      const weatherSystems = [
+        { type: 'rain', center: [51.0, 1.0], radiusKm: 250 },
+        { type: 'storm', center: [14.0, 101.0], radiusKm: 180 },
+        { type: 'snow', center: [60.0, 30.0], radiusKm: 300 },
+        { type: 'fog', center: [6.5, 3.3], radiusKm: 120 },
+        { type: 'rain', center: [28.5, 77.1], radiusKm: 160 },
+        { type: 'storm', center: [-1.3, 36.9], radiusKm: 140 },
+        { type: 'snow', center: [37.6, 140.4], radiusKm: 150 },
+        { type: 'fog', center: [25.2, 55.4], radiusKm: 100 },
+        { type: 'rain', center: [37.7749, -122.4194], radiusKm: 180 },
+        { type: 'storm', center: [29.7604, -95.3698], radiusKm: 220 },
+        { type: 'snow', center: [44.9778, -93.2650], radiusKm: 260 },
+        { type: 'fog', center: [47.6062, -122.3321], radiusKm: 140 }
+      ];
+
+      function kmToMeters(km){ return km * 1000; }
+
+      function styleForWeather(type){
+        switch(type){
+          case 'rain': return { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.15, weight: 2 };
+          case 'storm': return { color: '#fbbf24', fillColor: '#f59e0b', fillOpacity: 0.20, weight: 2, dashArray: '6 4' };
+          case 'snow': return { color: '#e5e7eb', fillColor: '#ffffff', fillOpacity: 0.12, weight: 2 };
+          case 'fog': return { color: '#94a3b8', fillColor: '#94a3b8', fillOpacity: 0.10, weight: 2 };
+          default: return { color: '#94a3b8', fillColor: '#94a3b8', fillOpacity: 0.10, weight: 2 };
+        }
+      }
+
+      function renderWeatherSystems(layer){
+        weatherSystems.forEach(sys => {
+          if (!activeWeather.has(sys.type)) return;
+          const circle = L.circle(sys.center, { radius: kmToMeters(sys.radiusKm), ...styleForWeather(sys.type) });
+          circle.bindTooltip(`${sys.type.toUpperCase()}`, { permanent: false, direction: 'center', className: 'text-xs font-mono' });
+          circle.addTo(layer);
+        });
+      }
+
+      async function renderMapLayers() {
+        const map = window.__map;
+        const markersLayer = window.__markersLayer;
+        const pathsLayer = window.__pathsLayer;
+        const weatherLayer = window.__weatherLayer;
+        
+        if (!map || !markersLayer || !pathsLayer) return;
+        
+        markersLayer.clearLayers();
+        pathsLayer.clearLayers();
+        if (weatherLayer) weatherLayer.clearLayers();
+
+        const flights = await getVisibleFlights();
+        console.log(`Rendering ${flights.length} flights on map`);
+        
+        let markersAdded = 0;
+        flights.forEach(flight => {
+          if (!activeFilters.has(flight.type)) return;
+          if (declutterMode && flight.type !== 'commercial') return;
+          
+          const marker = createLeafletMarker(flight);
+          if (marker) {
+            marker.addTo(markersLayer);
+            marker.once('add', () => styleMarkerByDeclutter(marker, flight));
+            markersAdded++;
+          }
+        });
+        
+        console.log(`Added ${markersAdded} markers to map`);
+
+        if (selectedFlightId) {
+          const flight = flights.find(f => f.id === selectedFlightId);
+          if (flight) {
+            if (declutterMode && flight.type !== 'commercial') {
+              return;
+            }
+            
+            let originCoords, destCoords;
+            
+            if (flight.live && flight.live.latitude && flight.live.longitude) {
+              originCoords = [flight.live.latitude, flight.live.longitude];
+            } else if (flight.departureCoords) {
+              originCoords = flight.departureCoords;
+            } else {
+              const oCode = getAirportCode(flight.origin);
+              originCoords = getLatLngFor(oCode);
+            }
+            
+            if (flight.arrivalCoords) {
+              destCoords = flight.arrivalCoords;
+            } else {
+              const dCode = getAirportCode(flight.destination);
+              destCoords = getLatLngFor(dCode);
+            }
+            
+            if (originCoords && destCoords) {
+              const line = L.polyline([originCoords, destCoords], { 
+                color: '#06b6d4', 
+                weight: 4, 
+                opacity: 1, 
+                lineJoin: 'round', 
+                lineCap: 'round' 
+              });
+              line.addTo(pathsLayer);
+              map.fitBounds(L.latLngBounds([originCoords, destCoords]), { padding: [40, 40] });
+            }
+          }
+        }
+
+        if (weatherMode && weatherLayer) {
+          renderWeatherSystems(weatherLayer);
+        }
+      }
+
+      async function selectFlight(flightId) {
+        if(selectedFlightId === flightId){
+          clearFlightSelection();
+          return;
+        }
+        selectedFlightId = flightId;
+        await renderMapLayers();
+        const flights = await updateFlightData();
+        const flight = flights.find(f => f.id === flightId);
+        showFlightInfo(flight);
+      }
+
+      async function clearFlightSelection() {
+        selectedFlightId = null;
+        await renderMapLayers();
+        flightInfoCard.classList.add('hidden');
+        if (document.activeElement && !document.getElementById('searchInput').contains(document.activeElement)) {
+          searchInput.focus();
+        }
+      }
+
+      function showFlightInfo(flight) {
+        if (!flight) return;
+        
+        const container = document.getElementById('flightDetails');
+        let detailsHtml = `
+          <div>Flight: <span class="font-mono text-cyan-300">${flight.callsign}</span></div>
+          ${flight.airline ? `<div>Airline: <span class=\"text-blue-200\">${flight.airline}</span></div>` : ''}
+          <div>From: <span class="text-blue-200">${flight.origin}</span></div>
+          <div>To: <span class="text-blue-200">${flight.destination}</span></div>
+          <div>Altitude: <span class="font-semibold text-green-400">${flight.altitude}</span></div>
+          <div>Speed: <span class="font-semibold text-green-400">${flight.speed}</span></div>
+          <div>Aircraft: <span class="font-semibold text-blue-200">${flight.model}</span></div>
+          <div>Type: <span class="font-semibold text-yellow-400 capitalize">${flight.type}</span></div>
+        `;
+        
+        if (flight.status && useApiData.checked) {
+          detailsHtml += `<div>Status: <span class="font-semibold text-purple-400">${flight.status}</span></div>`;
+        }
+        
+        if (flight.live && useApiData.checked) {
+          detailsHtml += `<div class="mt-2 pt-2 border-t border-blue-700">`;
+          detailsHtml += `<div class="text-xs text-blue-300 mb-1">Live Data:</div>`;
+          if (flight.live.latitude && flight.live.longitude) {
+            detailsHtml += `<div>Position: <span class="text-green-400">${flight.live.latitude.toFixed(4)}, ${flight.live.longitude.toFixed(4)}</span></div>`;
+          }
+          if (flight.live.direction) {
+            detailsHtml += `<div>Heading: <span class="text-green-400">${flight.live.direction}°</span></div>`;
+          }
+          if (flight.live.is_ground !== undefined) {
+            detailsHtml += `<div>Status: <span class="text-green-400">${flight.live.is_ground ? 'On Ground' : 'Airborne'}</span></div>`;
+          }
+          detailsHtml += `</div>`;
+        }
+        
+        container.innerHTML = detailsHtml;
+        flightInfoCard.classList.remove('hidden');
+      }
+
+      // Event Listeners
+      
+      useApiData.addEventListener('change', async () => {
+        resetSearchState();
+        await renderMapLayers();
+        updateSearchStatus();
+      });
+
+      document.addEventListener('click', evt => {
+        const isClickInsideFilterBtn = filterBtn.contains(evt.target);
+        const isClickInsideDropdown = filterDropdown.contains(evt.target);
+        if(isClickInsideFilterBtn){
+          const isHidden = filterDropdown.classList.contains('hidden');
+          filterDropdown.classList.toggle('hidden');
+          filterBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+        } else if (!isClickInsideDropdown){
+          filterDropdown.classList.add('hidden');
+          filterBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      function toggleSwitch(element) {
+        const isActive = element.classList.toggle('active');
+        element.dataset.active = isActive;
+        element.setAttribute('aria-checked', isActive.toString());
+        return isActive;
+      }
+
+      declutterToggle.addEventListener('click', async () => {
+        declutterMode = toggleSwitch(declutterToggle);
+        if (declutterMode && selectedFlightId) {
+          const flights = await updateFlightData();
+          const sel = flights.find(f => f.id === selectedFlightId);
+          if (sel && sel.type !== 'commercial') {
+            clearFlightSelection();
+          }
+        }
+        await renderMapLayers();
+      });
+
+      weatherToggle.addEventListener('click', async () => {
+        weatherMode = toggleSwitch(weatherToggle);
+        weatherOverlay.style.opacity = weatherMode ? '1' : '0';
+        await renderMapLayers();
+      });
+
+      filterBtns.forEach(btn => {
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', async () => {
+          const filter = btn.dataset.filter;
+          const isActive = btn.classList.toggle('active');
+          btn.setAttribute('aria-pressed', isActive.toString());
+          if(isActive){
+            activeFilters.add(filter);
+          } else {
+            activeFilters.delete(filter);
+            if(selectedFlightId){
+              const flights = await updateFlightData();
+              const flight = flights.find(f=>f.id === selectedFlightId);
+              if(flight && !activeFilters.has(flight.type)){
+                clearFlightSelection();
+              }
+            }
+          }
+          await renderMapLayers();
+        });
+      });
+
+      weatherBtns.forEach(btn => {
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', async () => {
+          const t = btn.dataset.weather;
+          const isOn = btn.classList.toggle('active');
+          btn.setAttribute('aria-pressed', isOn.toString());
+          if (isOn) activeWeather.add(t); else activeWeather.delete(t);
+          if (weatherMode) await renderMapLayers();
+        });
+      });
+
+      closeInfoCard.addEventListener('click', () => clearFlightSelection());
+
+      async function handleSearchSubmit(query, source) {
+        const q = query.trim().toLowerCase();
+        if(!q) return false;
+
+        if (q === lastSearchQuery && searchResults.length > 0) {
+          searchIndex = (searchIndex + 1) % searchResults.length;
+          const id = searchResults[searchIndex];
+          await selectFlight(id);
+          updateSearchStatus();
+          filterDropdown.classList.add('hidden');
+          filterBtn.setAttribute('aria-expanded', 'false');
+          if (source === 'main') { searchInput.focus(); searchInput.select(); }
+          if (source === 'splash') { splashSearchInput.focus(); splashSearchInput.select(); }
+          return true;
+        }
+
+        const visible = await getVisibleFlights();
+        const matches = visible.filter(f => matchesQuery(f, q));
+        
+        if (matches.length === 0) {
+          alert('No matching flights found or filtered out by current filters.');
+          lastSearchQuery = '';
+          searchResults = [];
+          searchIndex = 0;
+          updateSearchStatus();
+          return false;
+        }
+        
+        lastSearchQuery = q;
+        searchResults = matches.map(m => m.id);
+        searchIndex = 0;
+        await selectFlight(searchResults[searchIndex]);
+        updateSearchStatus();
+        filterDropdown.classList.add('hidden');
+        filterBtn.setAttribute('aria-expanded', 'false');
+        
+        if (source === 'main') { searchInput.focus(); searchInput.select(); }
+        if (source === 'splash') { splashSearchInput.focus(); splashSearchInput.select(); }
+        return true;
+      }
+
+      searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleSearchSubmit(searchInput.value, 'main');
+      });
+
+      if (splashSearchForm) {
+        splashSearchForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const ok = await handleSearchSubmit(splashSearchInput.value, 'splash');
+          if (ok) {
+            splash.classList.add('hidden');
+            splash.setAttribute('aria-hidden', 'true');
+          }
+        });
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          clearFlightSelection();
+          resetSearchState();
+          searchInput.focus();
+        }
+      });
+
+      function hideSplash(){
+        if (!splash) return;
+        splash.classList.add('hidden');
+        splash.setAttribute('aria-hidden', 'true');
+      }
+      
+      if (splashViewMap) {
+        splashViewMap.addEventListener('click', () => {
+          hideSplash();
+        });
+      }
+      
+      if (splashFindFlight) {
+        splashFindFlight.addEventListener('click', () => {
+          splashSearchInput.focus();
+          splashSearchInput.select();
+        });
+      }
+
+      // Initial render
+      (async () => {
+        await renderMapLayers();
+        weatherOverlay.style.opacity = weatherMode ? '1' : '0';
+        updateSearchStatus();
+      })();
+    });
+  </script>
+</body>
+</html>
