@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-blue-900 text-white">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flight Radar Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    /* Search bar animated underline */
+    .search-underline input:focus {
+      border-color: #38bdf8;
+      outline: none;
+    }
+    .search-underline input::placeholder {
+      color: #cbd5e1;
+      opacity: 1;
+    }
+    .dropdown-panel {
+      animation: fadeInScale 0.25s ease;
+    }
+    @keyframes fadeInScale {
+      from { opacity:0; transform:scale(0.96) translateY(-10px);} 
+      to { opacity:1; transform:scale(1) translateY(0);} 
+    }
+    /* Icon styling */
+    .icon-btn { 
+      transition: all 0.2s ease; 
+    }
+    .icon-btn:hover, .icon-btn.fullscreen-hover { 
+      background: rgba(59,130,246,0.2);
+      transform: scale(1.05);
+    }
+    
+    /* Toggle switch styling */
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #1e3a8a;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    .toggle-switch.active {
+      background: #06b6d4;
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .toggle-switch.active::after {
+      transform: translateX(20px);
+    }
+    
+    /* Filter button active state */
+    .filter-btn {
+      transition: all 0.2s ease;
+    }
+    .filter-btn.active {
+      background: #06b6d4 !important;
+      color: white;
+      transform: scale(1.05);
+    }
+    /* Weather button active state */
+    .weather-btn {
+      transition: all 0.2s ease;
+    }
+    .weather-btn.active {
+      background: #22d3ee !important; /* cyan-400 */
+      color: #0b1324; /* dark text for contrast */
+      transform: scale(1.05);
+      box-shadow: 0 0 0 2px rgba(34,211,238,0.35), 0 6px 14px rgba(34,211,238,0.25);
+    }
+    
+    /* Flight marker animation */
+    .flight-marker, .leaflet-marker-icon.flight-marker {
+      transition: all 0.3s ease;
+      cursor: pointer;
+      font-size: 1.6rem;
+      user-select: none;
+      line-height: 1;
+      width: 1.8rem;
+      height: 1.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9999px;
+      border: 2px solid white;
+      box-shadow: 0 0 6px rgba(255 255 255 / 0.5);
+      background: rgba(0 0 0 / 0.2);
+      transform-origin: center;
+    }
+    .flight-marker:hover, .leaflet-marker-icon.flight-marker:hover {
+      transform: scale(1.4);
+      z-index: 10;
+      box-shadow: 0 0 12px #06b6d4;
+      background: rgba(6 182 212 / 0.8);
+    }
+
+    /* Path lines with smooth edges */
+    #flightPaths svg polyline {
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    /* Subtle animated background glow */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 500px at 12% 8%, rgba(59,130,246,0.14), transparent 60%),
+        radial-gradient(800px 500px at 88% 92%, rgba(34,211,238,0.12), transparent 60%);
+      z-index: 0;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col bg-gradient-to-br from-blue-900 via-blue-800 to-blue-500">
+  
+  <!-- Splash Screen -->
+  <div id="splash" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-600">
+    <div class="bg-blue-950/80 backdrop-blur-md border border-blue-600 rounded-2xl shadow-2xl p-8 w-[min(92vw,520px)] text-center">
+      <h1 class="text-2xl font-extrabold tracking-wide text-cyan-300 mb-2">Flight Radar Mockup</h1>
+      <p class="text-blue-200/90 mb-6">Choose how you want to start:</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button id="splashViewMap" class="px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-cyan-300" aria-label="View the interactive map">
+          View Map
+        </button>
+        <button id="splashFindFlight" class="px-4 py-3 rounded-xl bg-blue-700 hover:bg-blue-600 text-white font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Find a specific flight">
+          Find a Flight
+        </button>
+      </div>
+      <form id="splashSearchForm" class="mt-6 flex items-stretch gap-2" role="search" aria-label="Splash flight search">
+        <input id="splashSearchInput" type="search" class="flex-1 px-4 py-3 rounded-xl bg-blue-900/70 border border-blue-700 text-blue-100 placeholder:text-blue-300/70 focus:outline-none focus:border-cyan-400" placeholder="Search callsign, airline, city..." autocomplete="off" />
+        <button class="px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-lg transition" aria-label="Search">
+          Search
+        </button>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Top search bar/header -->
+  <header class="flex items-start px-6 py-4 bg-transparent gap-4 relative">
+    <!-- Search Box -->
+    <form id="searchForm" class="search-underline flex flex-col gap-2 flex-1 max-w-md" autocomplete="off" role="search" aria-label="Flight search form">
+      <input
+        type="search"
+        id="searchInput"
+        class="px-4 py-3 w-full rounded-lg bg-blue-950/80 backdrop-blur-sm border-b-2 border-transparent text-white focus:outline-none focus:border-cyan-400 focus:bg-blue-950 transition-all"
+        placeholder="JFK - New York"
+        aria-label="Search flights or queries"
+        autocomplete="off"
+      />
+      <span class="text-xs text-blue-200 pl-2 opacity-80" aria-live="polite">
+        Try queries like "Lagos to London", "Delta Airlines Europe"
+      </span>
+    </form>
+    
+    <!-- Filter Dropdown Trigger -->
+    <button id="filterBtn" class="icon-btn relative rounded-full px-4 py-3 bg-blue-800/80 backdrop-blur-sm hover:bg-blue-700 shadow-lg" aria-label="Open filters" aria-haspopup="true" aria-expanded="false" aria-controls="filterDropdown">
+      <!-- Filter icon -->
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <path d="M3 6h18M9 12h6M12 18h0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    
+    <!-- Dropdown Panel -->
+    <div id="filterDropdown" class="dropdown-panel absolute right-6 top-20 bg-blue-950/95 backdrop-blur-sm border border-blue-600 rounded-xl shadow-2xl w-80 z-50 hidden" role="menu" aria-label="Filter options">
+      <div class="p-6">
+        <!-- Header -->
+        <div class="flex items-center gap-3 mb-4 pb-3 border-b border-blue-700">
+          <svg width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="true">
+            <path d="M3 6h18M9 12h6M12 18h0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span class="font-semibold text-lg text-blue-100">Flight Filters</span>
+        </div>
+        
+        <!-- Aircraft Types -->
+        <div class="mb-6">
+          <div class="mb-3 text-blue-200 text-sm font-semibold">Aircraft Types</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="commercial" role="menuitem" aria-pressed="true">
+              <span>✈️</span> Commercial
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="private" role="menuitem" aria-pressed="true">
+              <span>🛩️</span> Private
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="military" role="menuitem" aria-pressed="true">
+              <span>⚔️</span> Military
+            </button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-filter="cargo" role="menuitem" aria-pressed="true">
+              <span>📦</span> Cargo
+            </button>
+          </div>
+        </div>
+        
+        <!-- Declutter Mode -->
+        <div class="flex items-center justify-between mb-4 py-2">
+          <div class="flex flex-col">
+            <span class="text-blue-200 text-sm font-medium">Declutter Mode</span>
+            <span class="text-blue-400 text-xs">Focus on commercial flights</span>
+          </div>
+          <div id="declutterToggle" class="toggle-switch" data-active="false" role="switch" tabindex="0" aria-checked="false"></div>
+        </div>
+        
+        <!-- Weather Overlay -->
+        <div class="flex items-center justify-between py-2">
+          <div class="flex flex-col">
+            <span class="text-blue-200 text-sm font-medium">Weather Overlay</span>
+            <span class="text-blue-400 text-xs">Show weather data</span>
+          </div>
+          <div id="weatherToggle" class="toggle-switch active" data-active="true" role="switch" tabindex="0" aria-checked="true"></div>
+        </div>
+
+        <!-- Weather Filters -->
+        <div class="mt-3">
+          <div class="mb-2 text-blue-200 text-sm font-semibold">Weather Filters</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="rain" aria-pressed="true">
+              🌧️ Rain
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="storm" aria-pressed="true">
+              ⛈️ Storm
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="snow" aria-pressed="true">
+              ❄️ Snow
+            </button>
+            <button class="weather-btn px-3 py-2 rounded-lg bg-blue-800 flex items-center gap-2 text-sm hover:bg-blue-700" data-weather="fog" aria-pressed="true">
+              🌫️ Fog
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="relative flex-1 px-6 pb-6 flex items-center justify-center select-none">
+    <div id="mapContainer" class="relative w-full h-[82vh] md:h-full md:max-h-[650px] rounded-2xl bg-gradient-to-tl from-blue-800 via-blue-700 to-blue-500 flex items-center justify-center overflow-hidden shadow-2xl">
+      
+      <!-- Map placeholder -->
+      <p class="absolute top-6 left-6 text-cyan-300 font-mono text-lg opacity-70 select-none">Interactive Map</p>
+      
+      <div id="leafletMap" class="absolute inset-0 z-0"></div>
+
+      <!-- Map placeholder -->
+      <div id="flightPaths" class="absolute inset-0 pointer-events-none z-10"></div>
+      
+      <!-- Weather overlay -->
+      <div id="weatherOverlay" class="absolute inset-0 bg-gradient-to-br from-blue-400/20 via-transparent to-cyan-400/20 pointer-events-none transition-opacity duration-500 z-5"></div>
+      
+      <!-- Leaflet markers are rendered within the map; no DOM overlay needed -->
+      
+      <!-- Weather indicator -->
+      <div class="absolute left-8 top-[40%] w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg text-xl opacity-90 z-30 select-none">
+        ⛅
+      </div>
+      
+      <!-- Flight Info Card -->
+      <div id="flightInfoCard" class="absolute bottom-6 left-6 bg-blue-950/95 backdrop-blur-sm border border-blue-600 rounded-xl shadow-2xl p-5 w-80 text-blue-100 hidden z-40" role="region" aria-live="polite" aria-label="Flight information">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-lg">Flight Information</span>
+          <button id="closeInfoCard" class="bg-blue-800 rounded-full w-8 h-8 flex items-center justify-center hover:bg-blue-700 transition-colors" aria-label="Close flight information">
+            <svg width="12" height="12" fill="none" aria-hidden="true" focusable="false">
+              <path d="M2 2l8 8M10 2L2 10" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div id="flightDetails" class="text-sm space-y-1">
+          <!-- Filled dynamically -->
+        </div>
+      </div>
+      <!-- Mobile-friendly map controls -->
+      <div class="absolute top-4 right-4 z-40 flex flex-col gap-2">
+        <button id="btnLocate" class="px-3 py-2 rounded-lg bg-blue-800/80 hover:bg-blue-700 text-white shadow">
+          Locate me
+        </button>
+        <button id="btnFullscreen" class="px-3 py-2 rounded-lg bg-blue-800/80 hover:bg-blue-700 text-white shadow">
+          Fullscreen
+        </button>
+        <!-- Filter button visible only while in fullscreen -->
+        <button id="filterBtnFs" class="icon-btn hidden rounded-full px-4 py-3 bg-blue-800/80 backdrop-blur-sm hover:bg-blue-700 shadow-lg" aria-label="Open filters (fullscreen)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+            <path d="M3 6h18M9 12h6M12 18h0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Elements
+      const filterBtn = document.getElementById('filterBtn');
+      const filterDropdown = document.getElementById('filterDropdown');
+      const declutterToggle = document.getElementById('declutterToggle');
+      const weatherToggle = document.getElementById('weatherToggle');
+      const weatherOverlay = document.getElementById('weatherOverlay');
+      const flightInfoCard = document.getElementById('flightInfoCard');
+      const closeInfoCard = document.getElementById('closeInfoCard');
+      // Leaflet handles markers; no DOM marker container
+      const flightMarkersContainer = null;
+      const flightPathsContainer = document.getElementById('flightPaths');
+      const filterBtns = filterDropdown.querySelectorAll('.filter-btn');
+      const weatherBtns = filterDropdown.querySelectorAll('.weather-btn');
+      const searchForm = document.getElementById('searchForm');
+      const searchInput = document.getElementById('searchInput');
+      const flightDetails = document.getElementById('flightDetails');
+      const splash = document.getElementById('splash');
+      const splashViewMap = document.getElementById('splashViewMap');
+      const splashFindFlight = document.getElementById('splashFindFlight');
+      const splashSearchForm = document.getElementById('splashSearchForm');
+      const splashSearchInput = document.getElementById('splashSearchInput');
+      const btnLocate = document.getElementById('btnLocate');
+      const btnFullscreen = document.getElementById('btnFullscreen');
+      const filterBtnFs = document.getElementById('filterBtnFs');
+      // Keep track of original dropdown parent to restore after fullscreen
+      const originalDropdownParent = filterDropdown ? filterDropdown.parentElement : null;
+      const originalDropdownNext = filterDropdown ? filterDropdown.nextSibling : null;
+
+      // Initialize Leaflet map
+      const leafletMapEl = document.getElementById('leafletMap');
+      if (leafletMapEl) {
+        const map = L.map(leafletMapEl, { zoomControl: true }).setView([20, 0], 3);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        window.addEventListener('resize', () => map.invalidateSize());
+        // Expose and prepare layer groups for markers and paths
+        window.__map = map;
+        window.__markersLayer = L.layerGroup().addTo(map);
+        window.__pathsLayer = L.layerGroup().addTo(map);
+        window.__weatherLayer = L.layerGroup().addTo(map);
+      }
+
+      // Enhance: Locate me and Fullscreen controls
+      function toggleFullscreen(el){
+        if (!document.fullscreenElement) {
+          if (el && el.requestFullscreen) el.requestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+        }
+      }
+
+      // When fullscreen is active, make filter button appear hovered
+      document.addEventListener('fullscreenchange', () => {
+        const isFs = !!document.fullscreenElement;
+        const filterBtn = document.getElementById('filterBtn');
+        if (filterBtn) {
+          filterBtn.classList.toggle('fullscreen-hover', isFs);
+        }
+        if (filterBtnFs) {
+          filterBtnFs.classList.toggle('hidden', !isFs);
+        }
+        if (filterDropdown) {
+          if (isFs) {
+            const container = document.getElementById('mapContainer');
+            if (container && filterDropdown.parentElement !== container) {
+              container.appendChild(filterDropdown);
+              filterDropdown.style.right = '1rem';
+              filterDropdown.style.top = '4.5rem';
+            }
+          } else if (originalDropdownParent) {
+            // Restore dropdown position and hide it
+            if (originalDropdownNext) {
+              originalDropdownParent.insertBefore(filterDropdown, originalDropdownNext);
+            } else {
+              originalDropdownParent.appendChild(filterDropdown);
+            }
+            filterDropdown.classList.add('hidden');
+            filterBtn && filterBtn.setAttribute('aria-expanded', 'false');
+            filterDropdown.style.right = '';
+            filterDropdown.style.top = '';
+          }
+        }
+      });
+
+      //if (btnLocate) {
+        //btnLocate.addEventListener('click', () => {
+          //const map = window.__map;
+          //const layer = window.__markersLayer;
+          //if (!navigator.geolocation || !map) {
+          //  alert('Geolocation unavailable');
+          //  return;
+          //}
+          //navigator.geolocation.getCurrentPosition(({ coords }) => {
+          //  const latlng = [coords.latitude, coords.longitude];
+          //  L.marker(latlng, { title: 'You are here' }).addTo(layer);
+          //  map.setView(latlng, 10, { animate: true });
+          //}, () => alert('Unable to get location'));
+        //});
+      //}
+
+      if (btnFullscreen) {
+        btnFullscreen.addEventListener('click', () => {
+          const container = document.getElementById('mapContainer');
+          toggleFullscreen(container);
+          setTimeout(() => { if (window.__map) window.__map.invalidateSize(); }, 300);
+        });
+      }
+
+      if (filterBtnFs) {
+        filterBtnFs.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dropdown = document.getElementById('filterDropdown');
+          const container = document.getElementById('mapContainer');
+          if (!dropdown) return;
+          // Ensure dropdown is inside the fullscreen container when active
+          if (document.fullscreenElement === container && dropdown.parentElement !== container) {
+            container.appendChild(dropdown);
+          }
+          dropdown.style.right = '1rem';
+          dropdown.style.top = '4.5rem';
+          const willOpen = dropdown.classList.contains('hidden');
+          dropdown.classList.toggle('hidden');
+          // Mirror aria-expanded on the original button for consistency
+          if (filterBtn) filterBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+      }
+
+      // Flights data with emoji icons and normalized position [0-1] for left (x) and top (y)
+      // Airport/city coordinates (approximate)
+      const airportCoords = {
+        JFK: [40.6413, -73.7781],
+        LHR: [51.4700, -0.4543],
+        LAX: [33.9416, -118.4085],
+        MIA: [25.7959, -80.2870],
+        CDG: [49.0097, 2.5479],
+        SFO: [37.6213, -122.3790],
+        ORD: [41.9742, -87.9073],
+        FLL: [26.0726, -80.1527],
+        ATL: [33.6407, -84.4277],
+        NRT: [35.7730, 140.3929],
+        HND: [35.5494, 139.7798],
+        HKG: [22.3080, 113.9185],
+        SIN: [1.3644, 103.9915],
+        DEL: [28.5562, 77.1000],
+        BOM: [19.0896, 72.8656],
+        BKK: [13.6900, 100.7501],
+        ICN: [37.4602, 126.4407],
+        KUL: [2.7456, 101.7091],
+        DXB: [25.2532, 55.3657],
+        CAI: [30.1219, 31.4056],
+        NBO: [ -1.3192, 36.9278],
+        JNB: [ -26.1337, 28.2420],
+        CPT: [ -33.9696, 18.5972],
+        LOS: [6.5774, 3.3211],
+        ADD: [8.9779, 38.7993],
+        // Russia-region airports
+        SVO: [55.9736, 37.4146],
+        DME: [55.4088, 37.9063],
+        VKO: [55.5915, 37.2615],
+        LED: [59.8003, 30.2625],
+        SVX: [56.7431, 60.8027],
+        KZN: [55.6062, 49.2787],
+        OVB: [55.0126, 82.6507],
+        VVO: [43.3989, 132.1486],
+        MMK: [68.7817, 32.7508],
+        KGD: [54.8900, 20.5926]
+      };
+
+      const flights = [
+        { id: "DL283", callsign: "DL283", 
+        type: "commercial", model: "Boeing 767-300", origin: "JFK - New York", destination: "LHR - London", altitude: "36,000 ft", speed: "560 mph", emoji: "✈️" },
+        { id: "PR456", callsign: "PR456", 
+        type: "private", model: "Cessna Citation", origin: "LAX - Los Angeles", destination: "JFK - New York", altitude: "12,000 ft", speed: "180 mph", emoji: "🛩️" },
+        { id: "ML789", callsign: "ML789", 
+        type: "military", model: "F-16 Falcon", origin: "JFK - New York", destination: "?-???", altitude: "25,000 ft", speed: "900 mph", emoji: "⚔️", airline: "USAF" },
+        { id: "CG100", callsign: "CG100", 
+        type: "cargo", model: "Boeing 747F", origin: "MIA - Miami", destination: "CDG - Paris", altitude: "38,000 ft", speed: "520 mph", emoji: "📦", airline: "DHL Aviation" },
+        { id: "EX101", callsign: "EX101", 
+        type: "commercial", model: "Airbus A320", origin: "SFO - San Francisco", destination: "ORD - Chicago", altitude: "33,000 ft", speed: "540 mph", emoji: "✈️" },
+        { id: "PR789", callsign: "PR789", 
+        type: "private", model: "Gulfstream G650", origin: "FLL - Fort Lauderdale", destination: "ATL - Atlanta", altitude: "14,000 ft", speed: "200 mph", emoji: "🛩️" },
+        { id: "MG202", callsign: "MG202", 
+        type: "military", model: "MQ-9 Reaper", origin: "LAX - Los Angeles", destination: "SFO - San Francisco", altitude: "28,000 ft", speed: "480 mph", emoji: "⚔️", airline: "USAF" },
+        { id: "CG200", callsign: "CG200", 
+        type: "cargo", model: "Antonov An-124", origin: "LAX - Los Angeles", destination: "NRT - Tokyo", altitude: "37,000 ft", speed: "530 mph", emoji: "📦", airline: "Volga-Dnepr" },
+        // Asia & Africa region flights (types randomized across cargo/military/commercial/private)
+        { id: "AFR101", callsign: "AFR101", 
+        type: "commercial", model: "Airbus A350", origin: "CAI - Cairo", destination: "DXB - Dubai", altitude: "39,000 ft", speed: "560 mph", emoji: "✈️" },
+        { id: "KAL712", callsign: "KAL712", 
+        type: "cargo", model: "Boeing 777F", origin: "ICN - Seoul", destination: "HKG - Hong Kong", altitude: "35,000 ft", speed: "540 mph", emoji: "📦", airline: "Korean Air Cargo" },
+        { id: "RAF332", callsign: "RAF332", 
+        type: "military", model: "A400M Atlas", origin: "CPT - Cape Town", destination: "JNB - Johannesburg", altitude: "22,000 ft", speed: "450 mph", emoji: "⚔️", airline: "South African Air Force" },
+        { id: "ETH908", callsign: "ETH908", 
+        type: "cargo", model: "Boeing 767F", origin: "ADD - Addis Ababa", destination: "NBO - Nairobi", altitude: "31,000 ft", speed: "510 mph", emoji: "📦", airline: "Ethiopian Cargo" },
+        { id: "SIA223", callsign: "SIA223", 
+        type: "commercial", model: "Boeing 787-10", origin: "SIN - Singapore", destination: "BKK - Bangkok", altitude: "38,000 ft", speed: "570 mph", emoji: "✈️" },
+        { id: "IAF777", callsign: "IAF777", 
+        type: "military", model: "Su-30MKI", origin: "DEL - Delhi", destination: "BOM - Mumbai", altitude: "27,000 ft", speed: "900 mph", emoji: "⚔️", airline: "Indian Air Force" },
+        { id: "EMR404", callsign: "EMR404", 
+        type: "private", model: "Embraer Legacy 650", origin: "DXB - Dubai", destination: "CAI - Cairo", altitude: "16,000 ft", speed: "420 mph", emoji: "🛩️" },
+        { id: "DHL550", callsign: "DHL550", 
+        type: "cargo", model: "Boeing 757F", origin: "LOS - Lagos", destination: "CAI - Cairo", altitude: "34,000 ft", speed: "520 mph", emoji: "📦", airline: "DHL Aviation" },
+        { id: "CX902", callsign: "CX902", 
+        type: "commercial", model: "Airbus A330", origin: "HKG - Hong Kong", destination: "KUL - Kuala Lumpur", altitude: "37,000 ft", speed: "560 mph", emoji: "✈️" },
+        // Russia-region sample flights
+        { id: "SU100", callsign: "SU100", 
+        type: "commercial", model: "A321", origin: "SVO - Moscow", destination: "LED - St Petersburg", altitude: "32,000 ft", speed: "520 mph", emoji: "✈️", airline: "Aeroflot" },
+        { id: "UT301", callsign: "UT301", 
+        type: "commercial", model: "B737-800", origin: "DME - Moscow", destination: "SVX - Yekaterinburg", altitude: "34,000 ft", speed: "530 mph", emoji: "✈️" },
+        { id: "AZ901", callsign: "AZ901", 
+        type: "private", model: "Gulfstream G550", origin: "LED - St Petersburg", destination: "KZN - Kazan", altitude: "41,000 ft", speed: "560 mph", emoji: "🛩️" },
+        { id: "RU777", callsign: "RU777", 
+        type: "cargo", model: "IL-76", origin: "OVB - Novosibirsk", destination: "VVO - Vladivostok", altitude: "29,000 ft", speed: "480 mph", emoji: "📦", airline: "Volga-Dnepr" },
+        { id: "NRF01", callsign: "NRF01", 
+        type: "military", model: "Tu-95", origin: "MMK - Murmansk", destination: "KGD - Kaliningrad", altitude: "27,000 ft", speed: "430 mph", emoji: "⚔️", airline: "Air Force" }
+      ];
+
+      // Ensure cargo/military flights have airline/operator set for searchability
+      function ensureAirlines() {
+        const cargoFallbackByOrigin = {
+          ICN: 'Korean Air Cargo',
+          HKG: 'Cathay Cargo',
+          SIN: 'Singapore Airlines Cargo',
+          KUL: 'MASkargo',
+          BKK: 'Thai Cargo',
+          NRT: 'Nippon Cargo Airlines',
+          CAI: 'EgyptAir Cargo',
+          ADD: 'Ethiopian Cargo',
+          LOS: 'DHL Aviation',
+          JNB: 'SAA Cargo',
+          CPT: 'SAA Cargo',
+          DXB: 'Emirates SkyCargo'
+        };
+        const militaryFallbackByOrigin = {
+          JFK: 'USAF', LAX: 'USAF', SFO: 'USAF', ORD: 'USAF', ATL: 'USAF',
+          CAI: 'Egyptian Air Force',
+          JNB: 'South African Air Force', CPT: 'South African Air Force',
+          DEL: 'Indian Air Force', BOM: 'Indian Air Force',
+          DXB: 'UAE Air Force'
+        };
+        flights.forEach(f => {
+          if ((f.type === 'cargo' || f.type === 'military') && !f.airline) {
+            const code = getAirportCode(f.origin);
+            if (f.type === 'cargo') {
+              f.airline = cargoFallbackByOrigin[code] || 'Global Cargo';
+            } else if (f.type === 'military') {
+              f.airline = militaryFallbackByOrigin[code] || 'Air Force';
+            }
+          }
+        });
+      }
+
+      // State
+      let activeFilters = new Set(["commercial", "private", "military", "cargo"]);
+      let declutterMode = false;
+      let weatherMode = false;
+      let activeWeather = new Set(['rain','storm','snow','fog']);
+      let selectedFlightId = null;
+      let lastSearchQuery = '';
+      let searchResults = [];
+      let searchIndex = 0;
+      function getVisibleFlights() {
+        return flights.filter(f => {
+          if (!activeFilters.has(f.type)) return false;
+          if (declutterMode && f.type !== 'commercial') return false;
+          return true;
+        });
+      }
+
+      function matchesQuery(flight, query) {
+        const q = query.toLowerCase();
+        return (
+          flight.callsign.toLowerCase().includes(q) ||
+          (flight.airline && flight.airline.toLowerCase().includes(q)) ||
+          flight.origin.toLowerCase().includes(q) ||
+          flight.destination.toLowerCase().includes(q)
+        );
+      }
+
+      function updateSearchStatus() {
+        const status = document.querySelector('#searchForm span');
+        if (!status) return;
+        if (!lastSearchQuery || searchResults.length === 0) {
+          status.textContent = 'Try queries like "Lagos to London", "Delta Airlines Europe"';
+        } else {
+          status.textContent = `Matches for "${lastSearchQuery}": ${searchResults.length} (${searchIndex + 1}/${searchResults.length})`;
+        }
+      }
+
+      function resetSearchState() {
+        lastSearchQuery = '';
+        searchResults = [];
+        searchIndex = 0;
+        updateSearchStatus();
+      }
+
+      // Helpers
+      function getAirportCode(nameWithCity) {
+        // Expect formats like "JFK - New York"; take code before first space or '-'
+        if (!nameWithCity) return null;
+        const code = nameWithCity.split(/[\s-]+/)[0].trim();
+        return code || null;
+      }
+
+      function getLatLngFor(code) {
+        return airportCoords[code] || null;
+      }
+
+      function createLeafletMarker(flight) {
+        const originCode = getAirportCode(flight.origin);
+        const latlng = getLatLngFor(originCode);
+        if (!latlng) return null;
+        const divIcon = L.divIcon({
+          className: 'flight-marker',
+          html: `<span>${flight.emoji}</span>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        const m = L.marker(latlng, { icon: divIcon, title: `${flight.callsign} (${flight.type})` });
+        m.on('click', () => selectFlight(flight.id));
+        m.on('keypress', (e) => { if (e.originalEvent && (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ')) selectFlight(flight.id); });
+        m.__flightId = flight.id;
+        return m;
+      }
+
+      function styleMarkerByDeclutter(marker, flight) {
+        const el = marker.getElement();
+        if (!el) return;
+        if (declutterMode && flight.type !== 'commercial') {
+          el.style.opacity = '0.3';
+          el.style.transform = 'scale(0.8)';
+        } else {
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1)';
+        }
+      }
+
+      // Dummy weather systems (centers and radii in km)
+      const weatherSystems = [
+        { type: 'rain', center: [51.0, 1.0], radiusKm: 250 },
+        { type: 'storm', center: [14.0, 101.0], radiusKm: 180 },
+        { type: 'snow', center: [60.0, 30.0], radiusKm: 300 },
+        { type: 'fog', center: [6.5, 3.3], radiusKm: 120 },
+        { type: 'rain', center: [28.5, 77.1], radiusKm: 160 },
+        { type: 'storm', center: [-1.3, 36.9], radiusKm: 140 },
+        { type: 'snow', center: [37.6, 140.4], radiusKm: 150 },
+        { type: 'fog', center: [25.2, 55.4], radiusKm: 100 },
+        // North America
+        { type: 'rain', center: [37.7749, -122.4194], radiusKm: 180 }, // SF Bay
+        { type: 'storm', center: [29.7604, -95.3698], radiusKm: 220 }, // Houston/Gulf
+        { type: 'snow', center: [44.9778, -93.2650], radiusKm: 260 }, // Minneapolis
+        { type: 'fog', center: [47.6062, -122.3321], radiusKm: 140 }, // Seattle
+        { type: 'snow', center: [43.6532, -79.3832], radiusKm: 180 }, // Toronto/Great Lakes
+        // Central & South America
+        { type: 'storm', center: [19.4326, -99.1332], radiusKm: 160 }, // Mexico City
+        { type: 'rain', center: [-3.4653, -62.2159], radiusKm: 350 }, // Amazon Basin
+        { type: 'storm', center: [-23.5505, -46.6333], radiusKm: 180 }, // São Paulo
+        // Europe & Atlantic
+        { type: 'storm', center: [45.0, -20.0], radiusKm: 300 }, // Mid-Atlantic
+        { type: 'rain', center: [48.8566, 2.3522], radiusKm: 140 }, // Paris
+        // Africa additions
+        { type: 'rain', center: [9.0820, 8.6753], radiusKm: 220 }, // Nigeria interior
+        { type: 'fog', center: [31.2357, 29.9553], radiusKm: 100 }, // Alexandria coast
+        // Asia-Pacific additions
+        { type: 'storm', center: [22.3964, 114.1095], radiusKm: 160 }, // South China coast
+        { type: 'rain', center: [-33.8688, 151.2093], radiusKm: 180 }, // Sydney
+        { type: 'fog', center: [35.6762, 139.6503], radiusKm: 110 } // Tokyo
+      ];
+
+      function kmToMeters(km){ return km * 1000; }
+
+      function styleForWeather(type){
+        switch(type){
+          case 'rain': return { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.15, weight: 2 };
+          case 'storm': return { color: '#fbbf24', fillColor: '#f59e0b', fillOpacity: 0.20, weight: 2, dashArray: '6 4' };
+          case 'snow': return { color: '#e5e7eb', fillColor: '#ffffff', fillOpacity: 0.12, weight: 2 };
+          case 'fog': return { color: '#94a3b8', fillColor: '#94a3b8', fillOpacity: 0.10, weight: 2 };
+          default: return { color: '#94a3b8', fillColor: '#94a3b8', fillOpacity: 0.10, weight: 2 };
+        }
+      }
+
+      function renderWeatherSystems(layer){
+        weatherSystems.forEach(sys => {
+          if (!activeWeather.has(sys.type)) return;
+          const circle = L.circle(sys.center, { radius: kmToMeters(sys.radiusKm), ...styleForWeather(sys.type) });
+          circle.bindTooltip(`${sys.type.toUpperCase()}`, { permanent: false, direction: 'center', className: 'text-xs font-mono' });
+          circle.addTo(layer);
+        });
+      }
+
+      function renderMapLayers() {
+        const map = window.__map;
+        const markersLayer = window.__markersLayer;
+        const pathsLayer = window.__pathsLayer;
+        const weatherLayer = window.__weatherLayer;
+        if (!map || !markersLayer || !pathsLayer) return;
+        markersLayer.clearLayers();
+        pathsLayer.clearLayers();
+        if (weatherLayer) weatherLayer.clearLayers();
+        flights.forEach(flight => {
+          // Apply user filters and declutter (commercial-only) together
+          if (!activeFilters.has(flight.type)) return;
+          if (declutterMode && flight.type !== 'commercial') return;
+          const marker = createLeafletMarker(flight);
+          if (marker) {
+            marker.addTo(markersLayer);
+            marker.once('add', () => styleMarkerByDeclutter(marker, flight));
+          }
+        });
+
+        if (selectedFlightId) {
+          const flight = flights.find(f => f.id === selectedFlightId);
+          if (flight) {
+            // If declutter hides this flight, don't draw its path
+            if (declutterMode && flight.type !== 'commercial') {
+              // Defer clearing selection to the toggle handler to avoid flicker
+              return;
+            }
+            const oCode = getAirportCode(flight.origin);
+            const dCode = getAirportCode(flight.destination);
+            const o = getLatLngFor(oCode);
+            const d = getLatLngFor(dCode);
+            if (o && d) {
+              const line = L.polyline([o, d], { color: '#06b6d4', weight: 4, opacity: 1, lineJoin: 'round', lineCap: 'round' });
+              line.addTo(pathsLayer);
+              // Fit bounds softly
+              map.fitBounds(L.latLngBounds([o, d]), { padding: [40, 40] });
+            }
+          }
+        }
+        if (weatherMode && weatherLayer) {
+          renderWeatherSystems(weatherLayer);
+        }
+      }
+
+      function selectFlight(flightId) {
+        if(selectedFlightId === flightId){
+          // Clicking the same flight toggles deselect
+          clearFlightSelection();
+          return;
+        }
+        selectedFlightId = flightId;
+        renderMapLayers();
+        const flight = flights.find(f => f.id === flightId);
+        showFlightInfo(flight);
+      }
+
+      function clearFlightSelection() {
+        selectedFlightId = null;
+        renderMapLayers();
+        flightInfoCard.classList.add('hidden');
+        // Make it easy to type a new query after exiting results
+        if (document.activeElement && !document.getElementById('searchInput').contains(document.activeElement)) {
+          searchInput.focus();
+        }
+      }
+
+      // SVG path rendering removed in favor of Leaflet polylines bound to map coordinates
+
+      function showFlightInfo(flight) {
+        if (!flight) return;
+        const container = document.getElementById('flightDetails');
+        container.innerHTML = `
+          <div>Flight: <span class="font-mono text-cyan-300">${flight.callsign}</span></div>
+          ${flight.airline ? `<div>Airline: <span class=\"text-blue-200\">${flight.airline}</span></div>` : ''}
+          <div>From: <span class="text-blue-200">${flight.origin}</span></div>
+          <div>To: <span class="text-blue-200">${flight.destination}</span></div>
+          <div>Altitude: <span class="font-semibold text-green-400">${flight.altitude}</span></div>
+          <div>Speed: <span class="font-semibold text-green-400">${flight.speed}</span></div>
+          <div>Aircraft: <span class="font-semibold text-blue-200">${flight.model}</span></div>
+          <div>Type: <span class="font-semibold text-yellow-400 capitalize">${flight.type}</span></div>
+        `;
+        flightInfoCard.classList.remove('hidden');
+      }
+
+      // Toggle dropdown filter
+      document.addEventListener('click', evt => {
+        const isClickInsideFilterBtn = filterBtn.contains(evt.target);
+        const isClickInsideFsBtn = filterBtnFs ? filterBtnFs.contains(evt.target) : false;
+        const isClickInsideDropdown = filterDropdown.contains(evt.target);
+        if(isClickInsideFilterBtn || isClickInsideFsBtn){
+          const isHidden = filterDropdown.classList.contains('hidden');
+          filterDropdown.classList.toggle('hidden');
+          filterBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+          if (!isHidden && document.fullscreenElement === document.getElementById('mapContainer')) {
+            const container = document.getElementById('mapContainer');
+            if (container && filterDropdown.parentElement !== container) {
+              container.appendChild(filterDropdown);
+              filterDropdown.style.right = '1rem';
+              filterDropdown.style.top = '4.5rem';
+            }
+          }
+        } else if (!isClickInsideDropdown){
+          filterDropdown.classList.add('hidden');
+          filterBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      // Toggle switches declutter & weather
+      function toggleSwitch(element) {
+        const isActive = element.classList.toggle('active');
+        element.dataset.active = isActive;
+        element.setAttribute('aria-checked', isActive.toString());
+        return isActive;
+      }
+
+      declutterToggle.addEventListener('click', () => {
+        declutterMode = toggleSwitch(declutterToggle);
+        // If a non-commercial is selected while declutter on, clear selection
+        if (declutterMode && selectedFlightId) {
+          const sel = flights.find(f => f.id === selectedFlightId);
+          if (sel && sel.type !== 'commercial') {
+            clearFlightSelection();
+          }
+        }
+        renderMapLayers();
+      });
+      declutterToggle.addEventListener('keydown', e => {
+        if(e.key === 'Enter' || e.key === ' '){
+          e.preventDefault();
+          declutterMode = toggleSwitch(declutterToggle);
+          if (declutterMode && selectedFlightId) {
+            const sel = flights.find(f => f.id === selectedFlightId);
+            if (sel && sel.type !== 'commercial') {
+              clearFlightSelection();
+            }
+          }
+          renderMapLayers();
+        }
+      });
+
+      weatherToggle.addEventListener('click', () => {
+        weatherMode = toggleSwitch(weatherToggle);
+        weatherOverlay.style.opacity = weatherMode ? '1' : '0';
+        renderMapLayers();
+      });
+      weatherToggle.addEventListener('keydown', e => {
+        if(e.key === 'Enter' || e.key === ' '){
+          e.preventDefault();
+          weatherMode = toggleSwitch(weatherToggle);
+          weatherOverlay.style.opacity = weatherMode ? '1' : '0';
+          renderMapLayers();
+        }
+      });
+
+      // Filter buttons
+      filterBtns.forEach(btn => {
+        btn.classList.add('active'); // default active
+        btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', () => {
+          const filter = btn.dataset.filter;
+          const isActive = btn.classList.toggle('active');
+          btn.setAttribute('aria-pressed', isActive.toString());
+          if(isActive){
+            activeFilters.add(filter);
+          } else {
+            activeFilters.delete(filter);
+            // If selected flight is now filtered out, clear selection
+            if(selectedFlightId){
+              const flight = flights.find(f=>f.id === selectedFlightId);
+              if(flight && !activeFilters.has(flight.type)){
+                clearFlightSelection();
+              }
+            }
+          }
+          renderMapLayers();
+        });
+      });
+
+      // DOM-based flight markers removed; interactions now handled via Leaflet markers
+
+      // Weather filter buttons wire-up
+      weatherBtns.forEach(btn => {
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', () => {
+          const t = btn.dataset.weather;
+          const isOn = btn.classList.toggle('active');
+          btn.setAttribute('aria-pressed', isOn.toString());
+          if (isOn) activeWeather.add(t); else activeWeather.delete(t);
+          if (weatherMode) renderMapLayers();
+        });
+      });
+
+      // Close info card button
+      closeInfoCard.addEventListener('click', () => clearFlightSelection());
+
+      function handleSearchSubmit(query, source) {
+        const q = query.trim().toLowerCase();
+        if(!q) return false;
+
+        if (q === lastSearchQuery && searchResults.length > 0) {
+          // Cycle to next result
+          searchIndex = (searchIndex + 1) % searchResults.length;
+          const id = searchResults[searchIndex];
+          selectFlight(id);
+          updateSearchStatus();
+          filterDropdown.classList.add('hidden');
+          filterBtn.setAttribute('aria-expanded', 'false');
+          // Keep focus in the initiating input
+          if (source === 'main') { searchInput.focus(); searchInput.select(); }
+          if (source === 'splash') { splashSearchInput.focus(); splashSearchInput.select(); }
+          return true;
+        }
+
+        // New query or no prior results: compute visible matches
+        const visible = getVisibleFlights();
+        const matches = visible.filter(f => matchesQuery(f, q));
+        if (matches.length === 0) {
+          alert('No matching flights found or filtered out by current filters.');
+          lastSearchQuery = '';
+          searchResults = [];
+          searchIndex = 0;
+          updateSearchStatus();
+          return false;
+        }
+        lastSearchQuery = q;
+        searchResults = matches.map(m => m.id);
+        searchIndex = 0;
+        selectFlight(searchResults[searchIndex]);
+        updateSearchStatus();
+        filterDropdown.classList.add('hidden');
+        filterBtn.setAttribute('aria-expanded', 'false');
+        if (source === 'main') { searchInput.focus(); searchInput.select(); }
+        if (source === 'splash') { splashSearchInput.focus(); splashSearchInput.select(); }
+        return true;
+      }
+
+      // Main search form
+      searchForm.addEventListener('submit', e => {
+        e.preventDefault();
+        handleSearchSubmit(searchInput.value, 'main');
+      });
+
+      // Splash search form
+      if (splashSearchForm) {
+        splashSearchForm.addEventListener('submit', e => {
+          e.preventDefault();
+          const ok = handleSearchSubmit(splashSearchInput.value, 'splash');
+          if (ok) {
+            // Hide splash after first result selection
+            splash.classList.add('hidden');
+            splash.setAttribute('aria-hidden', 'true');
+          }
+        });
+      }
+
+      // Global Escape key to exit selection and clear search state, then focus input
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          clearFlightSelection();
+          resetSearchState();
+          searchInput.focus();
+        }
+      });
+
+      // Initial render
+      ensureAirlines();
+      renderMapLayers();
+      weatherOverlay.style.opacity = weatherMode ? '1' : '0';
+      updateSearchStatus();
+      // Splash behavior
+      function hideSplash(){
+        if (!splash) return;
+        splash.classList.add('hidden');
+        splash.setAttribute('aria-hidden', 'true');
+      }
+      if (splashViewMap) {
+        splashViewMap.addEventListener('click', () => {
+          hideSplash();
+        });
+      }
+      if (splashFindFlight) {
+        splashFindFlight.addEventListener('click', () => {
+          // Keep splash visible and focus its search box
+          splashSearchInput.focus();
+          splashSearchInput.select();
+        });
+      }
+    });
+  </script>
+</body>
+</html>
